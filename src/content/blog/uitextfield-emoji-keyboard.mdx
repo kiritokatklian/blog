@@ -1,0 +1,89 @@
+---
+title: "UITextField: presenting the emoji keyboard, and refusing emoji input entirely"
+description: UIKeyboardType has no emoji case and UITextInputTraits cannot refuse emoji. Overriding textInputMode selects the keyboard, and the private acceptsEmoji trait removes the emoji key from the rest.
+pubDate: 2026-04-11
+---
+
+Kurozora lets you build an avatar two ways: pick an emoji, or type your initials as a monogram. Both are a `UITextField` sitting over the preview with `textColor` and `tintColor` set to clear, so the field takes the input while the preview draws the result.
+
+The two fields need opposite things. The emoji field should offer nothing but emoji, since anything else is not an avatar. The monogram field should make emoji impossible, because it draws one or two letters at a large size and an emoji dropped into that slot is not initials. Neither is public API. Both come down to overriding `textInputMode`, plus the private `acceptsEmoji` trait for the second.
+
+## Selecting the emoji keyboard
+
+`UIKeyboardType` has no emoji case. The emoji keyboard is type 124, which is not declared in the header, and the initializer accepts it anyway.
+
+```swift
+if let emojiKeyboardType = UIKeyboardType(rawValue: 124) {
+    self.keyboardType = emojiKeyboardType
+}
+```
+
+That `if let` never fails, which is worth understanding rather than trusting. A Swift-native enum with a raw type rejects undeclared values, but `UIKeyboardType` is a C enum imported from Objective C, and imported C enums accept any raw value so a later OS can add cases without breaking existing initializers. Verifying it takes a two line test with an `NS_ENUM` in a bridging header: the imported enum accepts 124, an equivalent Swift enum returns `nil`. The optional is API shape, not validation.
+
+Requesting the type is half of it. Which keyboard the field presents is decided by `textInputMode`, so that is the override that does the work.
+
+```swift
+class EmojiTextField: UITextField {
+    override var textInputMode: UITextInputMode? {
+        for mode in UITextInputMode.activeInputModes where mode.primaryLanguage == "emoji" {
+            return mode
+        }
+        return super.textInputMode
+    }
+}
+```
+
+`activeInputModes` reflects the user's enabled keyboards, and the emoji keyboard is one they can remove in Settings. When it is absent there is no emoji mode to return, so the fallback to `super` is what makes the field show a normal keyboard rather than none at all.
+
+## Refusing emoji
+
+The mirrored override returns the first mode that is not emoji.
+
+```swift
+override var textInputMode: UITextInputMode? {
+    if let mode = super.textInputMode, mode.primaryLanguage != "emoji" {
+        return mode
+    }
+
+    return UITextInputMode.activeInputModes.first { $0.primaryLanguage != "emoji" }
+}
+```
+
+On its own that is not enough, and testing it shows why immediately: it controls which keyboard opens, and every language keyboard carries an emoji key in the bottom row. One tap on that key returns to emoji.
+
+The public `UITextInputTraits` protocol has no property covering this. The private trait object behind it does. A `UITextField` exposes `textInputTraits`, which carries `acceptsEmoji`, and setting it false removes the emoji key from every keyboard.
+
+```swift
+if let traits = self.value(forKey: "textInputTraits") as? NSObject {
+    traits.setValue(false, forKey: "acceptsEmoji")
+}
+```
+
+Both the lookup and the cast are optional, so an OS that renames or relocates this leaves a field that accepts emoji rather than one that crashes.
+
+That closes typing. Pasting is still open, and for a field this narrow the entire edit menu can go.
+
+```swift
+override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    return false
+}
+
+override func target(forAction action: Selector, withSender sender: Any?) -> Any? {
+    return nil
+}
+
+@available(iOS 16.0, *)
+override func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+    return nil
+}
+```
+
+`canPerformAction` hides the items, `target(forAction:)` refuses to supply anything that could perform them, and `editMenu(for:suggestedActions:)` covers iOS 16 and later, where the menu is built through a path that does not consult the first two.
+
+## Three mechanisms, three jobs
+
+The layers are worth keeping distinct when adapting this, because each one closes a different route and none substitutes for another.
+
+`textInputMode` decides which keyboard opens. `acceptsEmoji` decides whether the emoji key exists on it. The edit menu overrides decide whether input can arrive with no keyboard involved.
+
+Removing any one of the three either lets emoji through or prevents the emoji keyboard from appearing.
