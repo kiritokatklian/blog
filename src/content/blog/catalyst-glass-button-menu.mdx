@@ -1,0 +1,90 @@
+---
+title: "Mac Catalyst: assigning UIButton.menu makes a .glass() button invisible on macOS 26"
+description: A menu on a glass configured button suppresses UIButtonMacVisualElement, and setImage(_:for:) never reaches a configuration based button. Two independent causes of a button that renders nothing.
+pubDate: 2026-05-02
+---
+
+Kurozora's media viewer has a row of circular Liquid Glass buttons: share, save, and a more button that opens a menu. On iPhone and iPad all three draw. On Mac the more button draws nothing, no glass platter and no glyph, while still taking taps and still opening its menu.
+
+Two independent causes produce that symptom. Assigning `UIButton.menu` to a button configured `.glass()` suppresses the AppKit backed view that draws it, and `setImage(_:for:)` does not apply to a button that has a `UIButton.Configuration`. Both need fixing.
+
+## Isolating the two causes
+
+A button that renders nothing gives you no information about which part failed, so the first step is separating the platter from the glyph. Setting a background color on the button answers it in one build: if the color draws, the button's backing view is alive and only the image is missing. If nothing draws, the backing view is gone.
+
+Doing that showed both failures were present at once, which is why the first fix appeared to do nothing.
+
+For the platter, the difference between the broken button and the two beside it is two lines.
+
+```swift
+self.moreButton.menu = menu
+self.moreButton.showsMenuAsPrimaryAction = true
+```
+
+Removing them makes the button draw. Restoring them makes it disappear. In the Mac idiom a `UIButton` renders through `UIButtonMacVisualElement`, and on macOS 26 assigning a menu to a `.glass()` configured button suppresses it. No fallback drawing path takes over, leaving a tap target with a working menu and nothing visible. iOS 26 on iPhone and iPad is unaffected, as are earlier Catalyst versions.
+
+## Keeping the menu without UIButton.menu
+
+Only the `menu` property has to go. The `UIMenu` itself is fine and can be presented directly, so the platform decides the presentation and the actions stay declared in one place.
+
+```swift
+private static var canUseNativeUIButtonMenu: Bool {
+    #if targetEnvironment(macCatalyst)
+    if #available(macCatalyst 26.0, *) {
+        return false
+    }
+    #endif
+    return true
+}
+```
+
+Hold the menu in a property either way, and add a target action when the native path is unavailable.
+
+```swift
+case .more(let menu):
+    self.moreMenu = menu
+
+    if Self.canUseNativeUIButtonMenu {
+        self.moreButton.menu = menu
+        self.moreButton.showsMenuAsPrimaryAction = true
+    }
+
+    self.stackView.addArrangedSubview(self.moreButton)
+```
+
+Presenting it means rebuilding the menu as an action sheet, and a `UIAction` does not expose its handler. There is no public accessor and no way to invoke it directly. A `UIControl` can, though, since attaching an action to one and sending the matching control event runs it.
+
+```swift
+let dispatcher = UIControl()
+dispatcher.addAction(action, for: .primaryActionTriggered)
+
+alert.addAction(UIAlertAction(title: action.title, style: style) { _ in
+    dispatcher.sendActions(for: .primaryActionTriggered)
+})
+```
+
+## The image API that does not apply
+
+The second cause is unrelated to the menu and would have produced a glyphless button on its own.
+
+A button that sets `configuration = .glass()` takes its image from `configuration.image`. `setImage(_:for:)` belongs to the pre-configuration styling API, and on a button with a configuration it is accepted and has no visible effect. Nothing warns about the mismatch.
+
+Rather than rewrite every call site, the button absorbs it.
+
+```swift
+override func setImage(_ image: UIImage?, for state: UIControl.State) {
+    if state == .normal, var configuration = self.configuration {
+        configuration.image = image
+        self.configuration = configuration
+        return
+    }
+
+    super.setImage(image, for: state)
+}
+```
+
+`.normal` is routed into the configuration. Other states fall through to `super`, because a configuration has no per-state image and the legacy path still handles those correctly.
+
+## Checking for both
+
+Any `.glass()` button that renders nothing is worth testing against both causes before changing anything, since they are independent and either one alone is enough to produce an empty button. The background color test distinguishes them in a single build, and a button with a menu on macOS 26 is exposed to both.
