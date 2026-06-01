@@ -1,0 +1,42 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import {getCollection} from "astro:content";
+import BlogLockup from "../components/BlogLockup.astro";
+
+const posts = (await getCollection('blog'))
+    .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+    .slice(0, 3);
+---
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+    </head>
+    <body class="dark">
+        <Header />
+
+        <main class="mx-auto max-w-screen-sm px-5">
+            <h1 class="mt-4 mb-4">Latest</h1>
+
+            <section>
+                <ul class="space-y-8">
+                    {
+                        posts.map((post) => (
+                                <BlogLockup post={post} />
+                        ))
+                    }
+                </ul>
+            </section>
+
+            <div class="mt-12">
+                <a href="/blog">View All</a>
+            </div>
+        </main>
+
+        <Footer />
+    </body>
+</html>

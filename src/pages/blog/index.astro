@@ -1,0 +1,51 @@
+---
+import { getCollection } from 'astro:content';
+import BaseHead from '../../components/BaseHead.astro';
+import Footer from '../../components/Footer.astro';
+import Header from '../../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
+import BlogLockup from "../../components/BlogLockup.astro";
+
+const posts = (await getCollection('blog')).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+
+// Group posts by year
+const postsByYear = posts.reduce((groups, post) => {
+    const year = new Date(post.data.pubDate).getFullYear();
+
+    if (!groups[year]) {
+        groups[year] = [];
+    }
+
+    groups[year].push(post);
+    return groups;
+}, {});
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+	</head>
+	<body class="dark">
+		<Header />
+		<main class="mx-auto max-w-screen-sm px-5">
+            <h1>Blog</h1>
+
+            {
+                Object.entries(postsByYear).map(([year, yearPosts]) => (
+                    <section>
+                        <h2>{year}</h2>
+                        <ul>
+                            {yearPosts.map((post) => (
+                                <BlogLockup post={post} />
+                            ))}
+                        </ul>
+                    </section>
+                ))
+            }
+		</main>
+		<Footer />
+	</body>
+</html>

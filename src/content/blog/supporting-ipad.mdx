@@ -1,0 +1,594 @@
+---
+title: "Supporting iPad: From \"Just Works\" to Native Experience"
+description: A guide to enhancing iPhone apps for iPad users, covering essential steps from basic compatibility to creating a native iPad experience.
+pubDate: 2025-12-17
+heroImage: ../../assets/iphone-to-ipad.png
+---
+
+Most developers build iPhone-first apps, but iPad support comes almost for free if you avoid a few mistakes.
+
+This document explains how far you can go, what to watch out for, and how to level up from “it runs” to “this feels native on iPad”.
+
+---
+
+## 🟢 Stage 1: Just Works
+
+> Goal: The app launches, looks acceptable, and doesn’t feel broken.
+
+This is the default expectation for every app.
+
+What you get for free:
+
+- iPhone app that runs on iPad
+- Auto Layout & SwiftUI layouts usually scale
+- Safe areas mostly behave
+
+### 1. Enable iPad Support
+
+- Ensure iPad is enabled under Supported Destinations settings
+- Do not lock the app to iPhone-only
+
+![“iPad” device target under Supported Destinations settings](attachment:d8d225e3-e4a4-4561-8aae-383502d22734:Screenshot_2025-12-18_at_10.41.32_AM.png)
+
+“iPad” device target under Supported Destinations settings
+
+### 2. Support All Orientations ♿
+
+Pad users expect rotation. If rotation is broken, the app feels unfinished.
+
+UIKit:
+
+```swift
+override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+    .all
+}
+```
+
+SwiftUI:
+
+- Avoid `.portrait` assumptions
+- Test rotation explicitly
+
+### 3. Fixed Widths & Heights ♿
+
+This is the most common reason iPhone apps look awful on iPad. Additionally, it’s incompatible with accessibility guidelines.
+
+Bad:
+
+```swift
+.frame(width: 375)
+```
+
+Good:
+
+```swift
+.frame(maxWidth: .infinity)
+```
+
+UIKit:
+
+- Avoid `UIScreen.main.bounds`
+- Avoid hardcoded constants tied to iPhone sizes
+
+### 4. Respect Safe Areas
+
+iPads have different insets. Floating bars, keyboard, multitasking all affect the layout.
+
+UIKit:
+
+```swift
+view.safeAreaLayoutGuide
+```
+
+SwiftUI:
+
+```swift
+.safeAreaInset(...)
+```
+
+---
+
+### 5. Readable Width
+
+`layoutMarginsFollowReadableWidth` defines an area that can easily be read without forcing users to move their head to track the lines.
+
+UIKit:
+
+```swift
+view.layoutMarginsFollowReadableWidth = true
+```
+
+SwiftUI: (iOS 15+)
+
+```swift
+private struct FollowReadableWidth: ViewModifier {
+    func body(content: Content) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            content.frame(maxWidth: 672)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+extension View {
+    func followReadableWidth() -> some View {
+        modifier(FollowReadableWidth())
+    }
+}
+```
+
+SwiftUI: (iOS 17+)
+
+```swift
+@Environment(\.horizontalSizeClass) private var hSizeClass
+@Environment(\.verticalSizeClass) private var vSizeClass
+
+.containerRelativeFrame([.horizontal]) { length, axis in
+    guard axis == .horizontal else { return length
+    if vSizeClass == .regular && hSizeClass == .regular {
+        return length * 0.64
+    } else {
+        return length
+    }
+}
+```
+
+What It Does:
+
+- Constrains layout margins on wide screens
+- Prevents super wide text blocks
+- Automatically adapts to Dynamic Type and device size
+
+---
+
+### ⚠️ Stage 1 Common Pitfalls
+
+- Centered iPhone UI in the middle of a huge screen with empty space on the sides
+- Buttons too far apart
+- Full-screen modals that feel ridiculous on iPad
+- Popups designed for touch phones, not pointer devices
+
+First stage is done if the app “just works” and doesn’t look like a stretched phone app.
+
+---
+
+## 🟡 Stage 2: Feels Good
+
+> Goal: The app adapts and uses space intelligently.
+
+This is where the app starts feeling intentionally designed for iPad.
+
+---
+
+### 1. Multiple Scenes 1.0
+
+iPad workflows often include:
+
+- Two documents side by side
+- Two different sections of the same app open simultaneously
+- Independent navigation stacks per window
+
+Not every app needs this, but document-based, browsing, or comparison-heavy apps benefit massively.
+
+UIKit:
+
+- Adopt `SceneDelegate`
+- Include `UIApplicationSceneManifest` in the app’s `Info.plist`
+
+SwiftUI: (Default)
+
+```swift
+@main
+struct App: SwiftUI.App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+SwiftUI: (Document)
+
+```swift
+DocumentGroup(newDocument: MyDocument()) { file in
+    EditorView(document: file.$document)
+}
+```
+
+---
+
+### 2. Size Classes
+
+UIKit:
+
+```swift
+traitCollection.horizontalSizeClass == .regular
+```
+
+SwiftUI:
+
+```swift
+@Environment(\.horizontalSizeClass) var hSizeClass
+```
+
+Use them to:
+
+- Switch from stacked → side-by-side layouts
+- Charts → tables
+- Show more content at once
+- Reduce navigation depth
+
+---
+
+### 3. Navigation Improvements
+
+Use split navigation when possible.
+
+UIKit:
+
+- `UISplitViewController`
+
+SwiftUI: (iOS 16+)
+
+```swift
+NavigationSplitView {
+    Sidebar()
+} detail: {
+    Content()
+}
+```
+
+Rule of thumb:
+
+- Lists → sidebar
+- Details → right pane
+- Don’t push everything full-screen
+
+---
+
+### 4. Modal Presentation
+
+Full-screen modals feel aggressive on iPad. Prefer `.pageSheet`, `.formSheet`, or popovers.
+
+UIKit:
+
+```swift
+vc.modalPresentationStyle = .formSheet
+```
+
+SwiftUI:
+
+```swift
+.presentationDetents([.medium, .large])
+```
+
+---
+
+### 5. Pointer Support ♿
+
+Hover states matter. Buttons should look tappable AND clickable
+
+UIKit:
+
+```swift
+button.isPointerInteractionEnabled = true
+```
+
+SwiftUI:
+
+```swift
+.onHover { isHovering in ... }
+```
+
+---
+
+### 6. Keyboard Support ♿
+
+Add support for command shortcuts, keyboard dismissal, and focus states.
+
+UIKit:
+
+```swift
+UIKeyCommand(input: "N", modifierFlags: .command, action: #selector(createNew))
+```
+
+SwiftUI:
+
+```swift
+.keyboardShortcut("n", modifiers: .command)
+```
+
+---
+
+### ⚠️ Stage 2 Common Pitfalls
+
+- Global singletons for navigation or selection
+- Assuming one active window
+- Using `NotificationCenter` for sharing states
+- Constraining layouts based on device type
+- Showing the same iPhone layout, just bigger
+- Overusing `sheet` instead of split navigation
+- Ignoring pointer + keyboard entirely
+- Treating “regular” width as uncommon on iPad
+
+Second stage is done when the app doesn’t *feel* like an iPhone app.
+
+---
+
+## 🔴 Stage 3: Actual iPad Experience
+
+> Goal: The app feels designed for iPad without being iPad-only.
+
+This is not required for every app, but it’s the end goal.
+
+---
+
+### 1. Adaptive Layouts
+
+Use available width by employing multi-column layouts:
+
+- 1 column → compact
+- 2–3 columns → regular width
+- Inline details instead of navigation hops
+
+SwiftUI:
+
+```swift
+Grid {
+    GridRow {
+        Sidebar()
+        Content()
+        Inspector()
+    }
+}
+```
+
+UIKit:
+
+- Multiple child view controllers
+- Custom container views
+
+---
+
+### 2. Multitasking
+
+iPad users are used to multitasking:
+
+- Split View
+- Slide Over
+- Stage Manager
+
+This has implications to how the app looks in different situations:
+
+- Layout can change while running
+- Never assume full screen
+- Listen for size changes
+
+UIKit:
+
+```swift
+viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator)
+```
+
+SwiftUI:
+
+- Layout updates automatically, as long as you didn’t hardcode sizes
+
+---
+
+### 2. Multiple Scenes 2.0
+
+Scenes are the most useful when they are:
+
+- User-intent driven
+- Restorable
+- Drag-n-create
+
+**User-intent driven**
+
+UIKit:
+
+```swift
+func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+) {
+    if let userActivity = connectionOptions.userActivities.first
+        ?? session.stateRestorationActivity
+    {
+        if !configure(window: window, with: userActivity) {
+            debugPrint("Failed to restore from \(userActivity)")
+        }
+    }
+
+    let conditions = scene.activationConditions
+    let predicate = NSPredicate(format: "self == %@", mainSceneTargetContentIdentifier)
+
+    conditions.canActivateForTargetContentIdentifierPredicate = predicate
+    conditions.prefersToActivateForTargetContentIdentifierPredicate = predicate
+}
+```
+
+SwiftUI:
+
+```swift
+@main
+struct GalleryApp: App {
+    var body: some Scene {
+        WindowGroup(for: Photo.ID.self) { $photoID in
+            if let photoID {
+                PhotoDetailView(photoID: photoID)
+            } else {
+                GalleryView()
+            }
+        }
+    }
+}
+```
+
+**Restore**
+
+Restoration is simply re-configuring the root UI from a `NSUserActivity`.
+
+UIKit:
+
+```swift
+func configure(window: UIWindow?, with activity: NSUserActivity) -> Bool {
+    guard
+        activity.activityType == UserActivity.GalleryOpenDetailActivityType,
+        let navigationController = window?.rootViewController as? UINavigationController,
+        let photoID = activity.userInfo?[UserActivity.GalleryOpenDetailPhotoAssetKey] as? String,
+        let photoTitle = activity.userInfo?[UserActivity.GalleryOpenDetailPhotoTitleKey] as? String
+    else {
+        return false
+    }
+
+    let viewController = PhotoDetailViewController.loadFromStoryboard()
+    viewController?.photo = Photo(assetName: photoID, title: photoTitle)
+
+    if let viewController {
+        navigationController.pushViewController(viewController, animated: false)
+        return true
+    }
+
+    return false
+}
+```
+
+SwiftUI:
+
+```swift
+struct PhotoDetailView: View {
+    @SceneStorage("photoID") private var photoID: String = ""
+
+    var body: some View { ... }
+}
+```
+
+**Drag-n-create**
+
+If the activity type is not declared in the app’s `Info.plist`, drag-to-create will not work.
+
+```swift
+<key>NSUserActivityTypes</key>
+<array>
+    <string>com.app.gallery.openDetail</string>
+</array>
+```
+
+UIKit:
+
+```swift
+func collectionView(
+    _ collectionView: UICollectionView,
+    itemsForBeginning session: UIDragSession,
+    at indexPath: IndexPath
+) -> [UIDragItem] {
+    let photo = photos[indexPath.row]
+
+    guard let image = UIImage(named: photo.assetName) else {
+        return []
+    }
+
+    let userActivity = photo.detailUserActivity
+    let itemProvider = NSItemProvider(object: image)
+    itemProvider.registerObject(userActivity, visibility: .all)
+
+    let dragItem = UIDragItem(itemProvider: itemProvider)
+    dragItem.localObject = photo
+
+    return [dragItem]
+}
+```
+
+SwiftUI:
+
+```swift
+.onDrag {
+    guard let image = UIImage(named: photo.assetName) else { return }
+
+    let activity = photo.detailUserActivity
+    let itemProvider = NSItemProvider(object: image)
+    itemProvider.registerObject(activity, visibility: .all)
+
+    return itemProvider
+}
+
+```
+
+---
+
+### 4. Toolbars, Inspectors & Context
+
+iPad excels at:
+
+- Persistent toolbars
+- Inspector panels
+- Contextual actions being always visible
+
+SwiftUI:
+
+```swift
+.toolbar {
+    ToolbarItem(placement: .navigationBarTrailing) { ... }
+}
+```
+
+UIKit:
+
+- `UIToolbar`
+- `UINavigationItem` + `UIBarButtonItem`
+
+---
+
+### 5. Desktop-Class Interactions
+
+- Context menus everywhere
+- Right-click support
+- Drag & drop
+
+SwiftUI:
+
+```swift
+.contextMenu {
+    Button("Delete", role: .destructive) { ... }
+}
+```
+
+UIKit:
+
+- `UIContextMenuInteraction`
+- `UIDragInteraction`
+
+---
+
+### ⚠️ Stage 3 Common Pitfalls
+
+- Over-engineering for iPad-only users
+- Breaking iPhone UX while “optimizing” for iPad
+- Custom layout logic that is uncommon
+
+Third stage is done when the app becomes iPad-native.
+
+---
+
+## ☑️ Checklist
+
+- [ ]  Rotate device
+- [ ]  Test multiple scenes
+- [ ]  Test Split View + Slide Over
+- [ ]  Test keyboard + pointer
+- [ ]  Test modal presentations
+- [ ]  Test regular & compact widths
+- [ ]  Test at least on one large iPad
+
+---
+
+## 📝 Summary
+
+- Stage 1: Don’t block iPad, don’t break layouts
+- Stage 2: Adapt navigation and content density
+- Stage 3: Embrace space, multitasking, and diverse inputs

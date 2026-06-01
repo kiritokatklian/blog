@@ -1,0 +1,245 @@
+---
+title: "Liquid Glass Design in iOS 26: A Comprehensive Guide"
+description: Explore the principles and best practices for implementing Liquid Glass design in iOS 26, including app icons, controls, tab bars, and navigation bars.
+pubDate: 2025-12-18
+heroImage: ../../assets/liquid-glass.png
+---
+
+Interfaces across Apple platforms now feature a dynamic material called Liquid Glass, which combines the optical properties of glass with a sense of fluidity. Understanding how to adopt this material, and applying the design principles of Apple platforms, allows you to create interfaces that establish hierarchy, maintain harmony, and ensure visual consistency across devices.
+
+With this new design language come important considerations for creating effective interfaces, such as things to watch for, pitfalls to avoid, and best practices to follow when working with Liquid Glass.
+
+## Do’s
+
+- **Match system components when they’re nearby.**
+If a custom view sits next to a native tab bar, sidebar, or button, use the regular glass variant so it feels integrated rather than separate.
+- **Use Tint sparingly.**
+Soft brand tinting works well for identity reinforcement, but subtlety is key. The material is meant to feel fluid, not painted.
+- **Maintain appropriate contrast.**
+Liquid Glass is semi-translucent. Ensure text and icons meet accessibility contrast ratios, especially over busy backgrounds.
+- **Test with motion and depth.**
+Liquid Glass responds differently when scrolling or when content shifts behind it. Always verify it doesn’t create visual noise or flicker.
+
+## Don’ts
+
+- **Don’t try to “flatten” the material.**
+You can’t override the blur radius, distortion behavior, or depth simulation. Avoid designs relying on a fully flat glass look, the system won’t allow it.
+- **Don’t layer multiple glass views unnecessarily.**
+Stacking too many glass layers causes muddiness, reduces clarity, and can introduce performance overhead.
+- **Don’t rely on fixed colors beneath the material.**
+Don’t plan gradients or art behind glass. Liquid Glass adapts dynamically. It may tint differently depending on scroll position or wallpaper.
+- **Don’t overuse clear glass.**
+It’s tempting for minimal designs, but clear glass reduces separation. For surfaces containing text or controls, regular glass is almost always safer.
+
+# App Icons
+
+App icons are now dynamic and expressive, with layered designs that respond to system lighting and visual effects. Updates to icon grids ensure consistent appearance across devices, while iOS and iPadOS provide light, dark, clear, and tinted variants for user personalization.
+
+## **Design Principles**
+
+- Maintain visual consistency and optical balance across all platforms.
+- Simplify designs using solid, filled, overlapping semi-transparent shapes.
+- Let the system handle effects like masking, blur, reflection, and highlights rather than embedding them in your artwork.
+
+![Various consistent iOS 26 app icon designs](attachment:6437a9a4-2c30-4282-93a7-1e924949d745:Screenshot_2025-12-12_at_2.00.56_PM.png)
+
+Various consistent iOS 26 app icon designs
+
+## **Layering**
+
+Define foreground, middle, and background elements in separate layers. The system applies visual effects automatically, so plan your layers to optimize depth and clarity.
+
+![iOS 26 icon variations](attachment:10a7f4d4-196b-494b-946e-feb1e58e39c8:Screenshot_2025-12-12_at_1.48.05_PM.png)
+
+iOS 26 icon variations
+
+## **Icon Composer**
+
+Use Apple’s [Icon Composer](https://developer.apple.com/icon-composer/) to arrange layers, adjust opacity, group elements, add backgrounds, and preview system effects.
+
+![Icon Composer interface](attachment:39d94428-7d6d-4882-9e6c-d7356c09ca66:image.png)
+
+Icon Composer interface
+
+## **Grid Preview**
+
+Check your design against updated icon grids to ensure proper alignment and avoid clipping. Icons are masked to rounded rectangles (iOS, iPadOS, macOS) or circles (watchOS), with irregular shapes receiving a system background.
+
+![Icon Composer with icon grid enabled](attachment:0e3cb37c-e35f-4919-8a09-e1022a00ff3c:GyUpDk0a4AQlrEm.jpg)
+
+Icon Composer with icon grid enabled
+
+# Controls
+
+iOS 26 introduces updates to system controls, including buttons, sliders, and toggles. These changes focus on Liquid Glass styling, clarity, and interactive feedback, helping you create interfaces that feel modern, consistent, and intuitive.
+
+## Buttons
+
+iOS 26 added four system button configurations built around the new Liquid Glass material: Glass, Clear Glass, Prominent Glass, and Prominent Clear Glass. These styles provide a consistent visual hierarchy across the system while still giving you room to communicate emphasis.
+
+- **Glass**
+
+A lightly frosted, translucent background that adapts to the content behind it. It offers subtle emphasis and works well for secondary actions or areas where the button needs to be visible without drawing strong attention.
+
+- **Clear Glass**
+
+A more transparent variant with reduced frosting and minimal tint. This sits closest to a “barely there” style and fits use cases where the interface should feel light or when you want the button to blend into the surrounding material.
+
+- **Prominent Glass**
+
+A stronger, more opaque glass with a tinted treatment that increases contrast and visual weight. This configuration is ideal for primary actions, especially in contexts where the interface is busy or layered with content underneath.
+
+- **Prominent Clear Glass**
+
+A transparent alternative to Prominent Glass, offering the same priority level but without the heavier tinted treatment. It maintains high emphasis through contrast and typography rather than opacity, making it suitable for visually minimal layouts.
+
+
+These configurations help ensure buttons remain readable against Liquid Glass surfaces while preserving the system’s layered, fluid aesthetic. You should choose between them based on the importance of the action and how much visual separation is needed from the background.
+
+![iOS 26 Liquid Glass button configurations](attachment:c0b7ee03-ecda-4446-9ed1-52e9e41d97c7:image.png)
+
+iOS 26 Liquid Glass button configurations
+
+## Slider
+
+Slider controls in iOS 26 have received a refreshed Liquid Glass treatment. The knob dynamically morphs and transitions from opaque to transparent glass as it moves, creating a fluid, tactile feel. The shape and color of the knob cannot be customized. The system enforces consistent styling to maintain clarity and cohesion across the platform. You should focus on placement, spacing, and contextual use of sliders rather than attempting to restyle it, ensuring the control integrates smoothly with surrounding elements and the overall Liquid Glass aesthetic.
+
+![iOS 26 slider](attachment:af8552f5-4448-4bd8-bcff-a87f2c1e8546:ezgif-813c168b4cbb30e9.gif)
+
+iOS 26 slider
+
+## Segmented Picker
+
+Segments now appear with a translucent, frosted background that adapts dynamically to the content behind them. Selected segments are highlighted with subtle emphasis using the glass effect. Corners and spacing are standardized across the system for consistency with other navigation and control elements, thus cannot be changed. Background and selection colors can be customized, but not all color choices work well with the glass effect, especially the dynamic glass effect when changing selections.
+
+![iOS 26 segmented picker](attachment:da2e992d-df48-4d83-a4c4-977047ca8ccd:ezgif-8a9470907521a819.gif)
+
+iOS 26 segmented picker
+
+## Custom Controls
+
+iOS 26 also allows applying the system’s Liquid Glass material to custom views, bringing the same frosted, fluid aesthetic found in system components. This effect comes in three variants:
+
+- **Regular**
+
+The default Liquid Glass material with the standard level of frosting, depth, and adaptive tint. It’s the closest match to system bars and native components.
+
+- **Clear**
+
+A lighter, more transparent variant with reduced blur and tint. It works well when you want elements to feel airy or when the background content should remain more visible.
+
+- **Tint**
+
+The Regular variant with a defined tint color layered into the material. This lets you introduce subtle brand accents while still keeping the system’s Liquid Glass behavior.
+
+
+![Custom view with “regular” glass effect                            Custom view with “clear” glass effect](attachment:6d5b83c4-c5d8-4f0f-a1aa-41b5036fbc04:image.png)
+
+Custom view with “regular” glass effect                            Custom view with “clear” glass effect
+
+![Custom view with “tint” glass effect](attachment:9d5da1d2-74f8-4fe0-a9d9-f95aae7ba6f1:glass-effect-tint-color-is-interactive-demo.jpg)
+
+Custom view with “tint” glass effect
+
+# Tab Bar
+
+The tab bar is a key navigation component on iOS and iPadOS, providing quick access to primary sections of an app. In iOS 26, Apple introduced updates to its appearance and behavior, including Liquid Glass styling, accessory handling, and interaction changes.
+
+## Pre-iOS 26
+
+On iOS 18 and older, the bottom bar sat flush against the screen edge and allowed far more customization, including custom backgrounds, translucency levels, height changes, and shadows. You could effectively restyle the component to match a brand or visual language. With iOS 26, Apple has standardized its appearance through Liquid Glass, removing much of that flexibility.
+
+![Default pre-iOS 26 tab bar with light customization](attachment:7e110239-4069-4a0d-9936-6bc4108d6d2c:image.png)
+
+Default pre-iOS 26 tab bar with light customization
+
+![image.png](attachment:9c2fb543-3c39-45fe-9fd1-ddd6e4b28652:0ab779a4-a05d-497a-8e9a-993dbf83a64f.png)
+
+Default pre-iOS 26 tab bar with more customization
+
+## Post-iOS 26
+
+On iOS, the tab bar floats at the bottom of the screen. With iOS 26, Apple introduced stricter rules around customizing the native tab bar: the system now enforces its Liquid Glass appearance, limits height manipulation, restricts custom background materials, and reduces control over animations and transitions. Fully custom tab bars are still possible, but unless the app depends on a very specific navigation model where the navigation itself is a core experience (e.g. Snapchat), it’s better to stick with the native component. This avoids extra engineering complexity and keeps users within a familiar navigation pattern.
+
+![Tab bar on PLUS running iOS 26 portrait mode](attachment:dd49e384-2758-450f-b206-3d6d7dc294c1:38dddd4b-f315-426a-a8bb-cfd82c3fc2cc.png)
+
+Tab bar on PLUS running iOS 26 portrait mode
+
+![Tab bar on ENGIE running iOS 26 portrait mode](attachment:9d4b4ad2-af64-46d6-9f10-3e1485e334eb:f4981ec6-90d7-4245-8680-bcf67ffcb2ee.png)
+
+Tab bar on ENGIE running iOS 26 portrait mode
+
+In landscape orientation, the tab bar normally floats centered on the screen. This changes when a tab uses the “Search” role. That tab becomes fixed on the right edge. When it’s present, the rest of the tabs shift to the left side, with a clear gap separating them from the floating “Search” tab on the right.
+
+Note that while this “Search” tab is intended for a dedicated search destination, it’s also possible to assign a custom icon and use it for another frequently accessed section, making it easier for users to reach with their right thumb.
+
+![Tab bar on ENGIE running iOS 26 landscape mode (without fixed tab)](attachment:67e3c624-07ae-4cc4-a5bc-4640912a7c18:IMG_6949.png)
+
+Tab bar on ENGIE running iOS 26 landscape mode (without fixed tab)
+
+![Tab bar on ENGIE running iOS 26 landscape mode (without fixed tab)](attachment:f62ae3ce-e38b-4662-b803-ec7661121337:1d9cf3bf-a4f2-4520-ac56-00ad14edafae.png)
+
+Tab bar on ENGIE running iOS 26 landscape mode (without fixed tab)
+
+On iPadOS, the tab bar has floated at the top of the screen since iPadOS 18. In iPadOS 26, the main visual change is the updated glass effect, which now matches the one introduced on iOS. Unlike iOS, icons in the tab bar on iPadOS are hidden, prioritizing text labels to better fit the platform’s more desktop-like navigation style.
+
+![Tab bar on ENGIE running iPadOS 26](attachment:14a9ae6a-9dc0-4dce-9dd7-429ff6ee7c6f:7602c2fc-c9d1-415a-b891-e058138a63a5.png)
+
+Tab bar on ENGIE running iPadOS 26
+
+The tab bar on iOS 18 and later supports limited user-side customization. Users can long-press the tab bar to open a sidebar where they can reorder tabs, hide ones they don’t use, or add others for quick access. In this sidebar view, tabs display their icons. While this isn’t design-level customization, it’s important to consider UX implications, such as which tabs are fixed (always visible and cannot be hidden), which ones are optional (hidden by default), and which single tab is pinned on the far right in tab bar mode. Overflowed tabs can be accessed by horizontally scrolling the tab bar on iPadOS. This customization isn’t available on iOS, where the number of visible tabs is fixed.
+
+![iPadOS 26 tab bar customization](attachment:8bdc8549-9ce7-46e3-9cb4-c7556bb991d1:Screenshot_2025-12-12_at_11.36.59_AM.png)
+
+iPadOS 26 tab bar customization
+
+Additionally, iOS 26 tab bar supports accessories, such as the MiniPlayer in the Apple Music app. When content scrolls down, the tab bar can enter a minimized state, allowing the accessory to move inline with the tab bar. Users can exit this minimized state either by tapping a tab or by scrolling back to the top of the view. You should consider how accessories interact with the tab bar to maintain clarity and usability. Minimized states should feel seamless and not obscure important content.
+
+![Tab bar with an attached accessory (expanded)](attachment:0ae9b9ca-d60b-49a7-9855-498f8c73b5b5:bf6371dd-a09f-4bf6-9f0f-168b1895f286.png)
+
+Tab bar with an attached accessory (expanded)
+
+![Tab bar with an attached accessory (minimized)](attachment:401388bf-cdd6-47a4-9048-6a781a958589:f15778fb-1f28-46be-b1aa-a673416621e9.png)
+
+Tab bar with an attached accessory (minimized)
+
+# Navigation Bar
+
+Navigation components in iOS 26 have adopted the Liquid Glass design language, introducing both visual and functional changes.
+
+## Key Visual Updates
+
+- **No more solid background color.**
+Navigation bars now use translucent shadows, creating depth and blending naturally with the content behind them.
+
+![Difference between iOS 18 and iOS 26 navigation bar background](attachment:1ecf8ce9-a799-4f65-a1aa-393548a3d089:image.png)
+
+Difference between iOS 18 and iOS 26 navigation bar background
+
+- **Scroll edge effect.**
+When content scrolls beneath a navigation bar, a subtle scroll edge effect appears. You can choose between **soft** and **hard** variants to indicate hierarchy and focus without overwhelming the interface. The edge effect color is dynamic, adapting to the content near the edge, it isn’t limited to white or black. For example it can even appear green depending on what’s scrolling underneath.
+
+![Soft scroll edge effect (default)                                         Hard scroll edge effect](attachment:8798e56c-0a00-4e93-85c6-7c908e9362aa:image.png)
+
+Soft scroll edge effect (default)                                         Hard scroll edge effect
+
+![Scroll edge effect adapting to the primary color of the content](attachment:d9af6f74-f335-45c6-8af4-bb65345ded58:Screenshot_2025-12-12_at_2.32.43_PM.png)
+
+Scroll edge effect adapting to the primary color of the content
+
+- **Group relevant toolbar buttons.**
+Toolbar buttons can be visually grouped to communicate hierarchy and the relationship between related actions, improving usability. Grouping also affects how the Liquid Glass effect responds when a user interacts with a button near others, ensuring the visual feedback feels cohesive and intuitive.
+
+![Incorrect implementation of grouping](attachment:db800874-8056-4467-9508-414bc1e7cc40:image.png)
+
+Incorrect implementation of grouping
+
+![Correct implementation of grouping](attachment:1003dd39-7063-4241-af7e-6f3318e24106:image.png)
+
+Correct implementation of grouping
+
+- Certain buttons, such as a **Close** button, can optionally morph to trigger a confirmation prompt if closing the view may result in data loss (for example, when the user has unsaved edits). This ensures a safer and more deliberate interaction flow.
+
+![iOS 26 close button action sheet](attachment:e8b84a8c-1303-4777-9f68-80f51f5c5774:image.png)
+
+iOS 26 close button action sheet

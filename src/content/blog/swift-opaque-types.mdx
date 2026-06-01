@@ -1,0 +1,453 @@
+---
+title: "Swift Opaque Types: Power, Pitfalls, and Practical Patterns"
+description: A deep dive into Swift's opaque result types (`some`), exploring their benefits, common pitfalls, and practical usage patterns.
+pubDate: 2026-01-02
+heroImage: ../../assets/opaque-types.png
+---
+
+Swift’s opaque result types arrived in Swift 5.1 with the `some` keyword. On paper, they look perfect.
+
+You hide the concrete type, keep static dispatch, avoid boxing into `Any` or protocol existentials, and keep the performance!
+
+Then you go beyond sandboxed examples and things start to get tricky.
+
+So let's see how opaque result types _actually_ behave using examples that come from real constraints you hit once the code grows. Swift 5.9 syntax is used, but most of this applies going back to 5.1.
+
+## 1. What an opaque type really means
+
+An opaque return type means one thing only.
+
+> This function returns one concrete type which conforms to this protocol. The compiler knows the type. The caller does not. The type never changes for this declaration.
+
+Nothing more. Nothing less.
+
+For example, consider this simple protocol and conforming types:
+
+```swift
+protocol Shape {
+    func area() -> Double
+}
+
+struct Circle: Shape {
+    let radius: Double
+
+    func area() -> Double {
+        .pi * radius * radius
+    }
+}
+
+struct Square: Shape {
+    let side: Double
+
+    func area() -> Double {
+        side * side
+    }
+}
+
+func makeCircle() -> some Shape {
+    Circle(radius: 10)
+}
+```
+
+`makeCircle()` returns a `some Shape`, but not an existential. The compiler treats it as returning `Circle`. The caller only knows it conforms to `Shape`.
+
+Contrast this with returning a protocol type:
+
+```swift
+func makeShape() -> Shape { ... }             // protocol existential
+func makeOpaqueShape() -> some Shape { ... }  // opaque result type
+```
+
+This looks similar to returning a protocol type, but the behavior differs in important ways.
+
+
+## 2. Opaque types versus existentials
+
+Compare these two functions:
+
+```swift
+// Existential
+func makeAnyShape() -> any Shape {
+    Circle(radius: 10)
+}
+
+// Opaque
+func makeOpaqueShape() -> some Shape {
+    Circle(radius: 10)
+}
+```
+
+Both return something shaped like a `Shape`. Internally, they are nothing alike.
+
+An existential (`any Shape`) stores a value plus witness tables. Calls go through dynamic dispatch. Protocols with `Self` or `associatedtype` hit restrictions.
+
+An opaque type keeps the concrete type intact. The compiler still specializes and inlines. The caller loses the type name, not the type itself.
+
+```swift
+let anyShape = makeAnyShape()       // type: any Shape
+let someShape = makeOpaqueShape()   // type: some Shape (compiler-known)
+
+print(type(of: anyShape))           // prints "Circle"
+print(type(of: someShape))          // prints "Circle" too, but you can't write `Circle` in the type
+```
+
+The runtime type matches. The difference is one lives at compile time.
+
+Opaque types give abstraction without paying the existential cost.
+
+The end result is opaque types let you hide the type in your public API without giving up static optimization.
+
+## 3. One concrete type per declaration
+
+The first hard rule where most people trip: every return path of a `some P` function must resolve to the same concrete type.
+
+The following code fails to compile:
+
+```swift
+func makeShape(_ useCircle: Bool) -> some Shape {
+    if useCircle {
+        Circle(radius: 10)
+    } else {
+        Square(side: 5)
+    }
+}
+```
+
+> Error: Function declares an opaque return type, but the return statements in its body do not have matching underlying types.
+
+The error message is accurate. Each return path produces a different concrete type, so the compiler cannot pick one.
+
+`some Shape` does not mean “one of several shapes, we don't care which”. It means “one hidden concrete type that conforms to `Shape`”.
+
+To work around this limitation, you have two main options.
+
+The first option is to use an existential:
+
+```swift
+func makeShape(_ useCircle: Bool) -> any Shape {
+    useCircle
+        ? Circle(radius: 10)
+        : Square(side: 5)
+}
+```
+
+The second option is to erase the actual type by using a wrapper type:
+
+```swift
+struct AnyShape: Shape {
+    private let _area: () -> Double
+
+    init<S: Shape>(_ shape: S) {
+        _area = shape.area
+    }
+
+    func area() -> Double {
+        _area()
+    }
+}
+
+func makeShape(_ useCircle: Bool) -> some Shape {
+    useCircle
+        ? AnyShape(Circle(radius: 10))
+        : AnyShape(Square(side: 5))
+}
+```
+
+Now the concrete type stays stable (`AnyShape`), so the compiler stays happy.
+
+Rule of thumb: if runtime choice matters, `some` is the wrong tool. In that case, use existentials, enums, or type-erased wrappers.
+
+## 4. Opaque types do not compose across functions
+
+Another surprise shows up once opaque functions start calling other opaque functions.
+
+This can feel infectious in generic code. Once you return `some Shape`, you cannot easily match it against another `some Shape` from somewhere else.
+
+```swift
+func makeOpaqueCircle() -> some Shape {
+    Circle(radius: 1)
+}
+
+func makeOpaqueSquare() -> some Shape {
+    Square(side: 1)
+}
+
+// Won't compile
+func pickShape(_ flag: Bool) -> some Shape {
+    flag
+        ? makeOpaqueCircle()
+        : makeOpaqueSquare()
+}
+```
+
+This fails for the same reason as before. Even though both functions return `some Shape`, each opaque function owns its hidden type, so the compiler treats them as unrelated.
+
+This is often the case in pipelines and builders:
+
+```swift
+func step1() -> some Sequence<Int> {
+    [1, 2, 3].lazy
+}
+
+func step2() -> some Sequence<Int> {
+    [4, 5, 6].lazy
+}
+```
+
+You cannot switch between these and keep `some Sequence<Int>`.
+
+The solution here is generics:
+
+```swift
+func process<S: Shape>(_ shape: S) -> S {
+    // ...
+    shape
+}
+
+let result = process(Circle(radius: 10)) // type: Circle
+```
+
+Generics give the type a _name_. Opaque types hide this name allowing you to pick the one you need.
+
+## 5. You dont' get to name the concrete type
+
+Because the whole point of `some` is hiding the concrete type, you can't use type annotations that rely on that hidden type. This is intentional, albeit frustrating.
+
+A valid opaque-return code looks like this:
+
+```swift
+func makeCounter() -> some IteratorProtocol {
+    (0...).makeIterator()
+}
+
+let counter = makeCounter()
+```
+
+This compiles because while you don't know the concrete type, the compiler does.
+
+You cannot write a type annotation for counter. There is no syntax for naming the hidden type. The same applies to associated types where the element stays hidden as well.
+
+Storing multiple values from the same opaque function works.
+
+Consider this:
+
+```swift
+let counter1 = makeCounter()
+let counter2 = makeCounter()
+
+// This is allowed
+let counters = [counter1, counter2]
+```
+
+Both values share the same hidden type and the compiler knows it.
+
+What you still cannot do is spell the element type or mix values from different opaque sources unless the underlying type matches exactly.
+
+```swift
+func makeAnotherCounter() -> some IteratorProtocol {
+    [1, 2, 3].makeIterator()
+}
+
+// This does not work:
+let mixedCounters = [makeCounter(), makeAnotherCounter()]
+```
+
+> Error: Heterogeneous collection literal could only be inferred to '[Any]'; add explicit type annotation if this is intentional
+
+Each opaque function owns its hidden type. Even if two functions return iterators with the same Element type and behavior, Swift treats them as different types if they come from different opaque returns. So mixing them breaks the single-type rule.
+
+Opaque types also hide associated types. `IteratorProtocol` has an `Element` type, but you cannot name `Element` at the call site.
+
+```swift
+func consumeElement(_ iterator: some IteratorProtocol) -> IteratorProtocol.Element {
+    var _it = iterator
+    return _it.next()!
+}
+```
+
+> Error: Cannot access associated type 'Element' from 'IteratorProtocol'; use a concrete type or generic parameter base instead
+
+If naming the type matters, opaque type is the wrong abstraction. Use a concrete type or generics:
+
+```swift
+func consume<I: IteratorProtocol>(_ iterator: I) -> I.Element {
+    var _it = iterator
+    return _it.next()!
+}
+```
+
+## 6. Associated types stay hidden
+
+Opaque returns help with protocols that include associated types, but only halfway.
+
+```swift
+protocol Repository {
+    associatedtype Entity
+    func get(id: UUID) async throws -> Entity
+}
+
+struct UserRepo: Repository {
+    struct User {
+        let id: UUID
+        let name: String
+    }
+
+    func get(id: UUID) async throws -> User {
+        User(id: id, name: "Anon")
+    }
+}
+
+func makeUserRepository() -> some Repository {
+    UserRepo()
+}
+```
+
+This compiles. Before `some`, it did not.
+
+What you still cannot do is name `Entity` at the call site.
+
+```swift
+let repo = makeUserRepository()
+let user = try await repo.get(id: UUID())
+```
+
+You receive a value, but the type stays abstract.
+
+The usual solution is to lift the associated type into a generic context.
+
+```swift
+func load<R: Repository>(from repo: R, id: UUID) async throws -> R.Entity {
+    try await repo.get(id: id)
+}
+
+let repo = makeUserRepository()
+let user = try await load(from: repo, id: UUID())
+```
+
+Inside the generic function, the associated type becomes concrete again.
+
+## 7. API and ABI stability still matter
+
+Opaque types hide names, not guarantees.
+
+Once a public API returns `some P`, clients compile against the underlying type behavior. Changing that type later risks ABI breakage in binary frameworks.
+
+Source-distributed packages have more room to move. Binary frameworks have less.
+
+For app code, this rarely matters. For libraries, treat opaque returns as part of the ABI surface.
+
+## 8. Compiler diagnostics get vague fast
+
+Opaque types interact poorly with inference once multiple branches appear.
+
+A SwiftUI-style example:
+
+```swift
+protocol View {}
+
+struct Text: View {
+    let value: String
+}
+
+struct VStack<Content: View>: View {
+    let content: Content
+}
+
+func makeView(_ condition: Bool) -> some View {
+    if condition {
+        Text(value: "Yes")
+    } else {
+        VStack(content: Text(value: "No"))
+    }
+}
+```
+
+The error points at the return statements. The real issue is the mismatch in concrete types.
+
+The stable fix is boring but effective.
+
+```swift
+struct AnyView: View {
+    private let storage: Any
+
+    init<V: View>(_ view: V) {
+        storage = view
+    }
+}
+
+func makeView(_ condition: Bool) -> some View {
+    condition
+        ? AnyView(Text(value: "Yes"))
+        : AnyView(VStack(content: Text(value: "No")))
+}
+```
+
+One concrete type. Problem gone.
+
+## 9. When opaque types pull their weight
+
+Opaque result types work best in a few specific cases.
+
+Hiding ugly generic return types.
+
+```swift
+public func makeNumbers() -> some Collection<Int> {
+    [1, 2, 3].lazy.map { $0 * 2 }
+}
+```
+
+Returning `Self`-style abstractions without leaking implementation.
+
+```swift
+protocol View {}
+struct Button: View {}
+
+func makePrimaryButton() -> some View {
+    Button()
+}
+```
+
+Performance-sensitive paths where specialization matters.
+
+APIs where the concrete type stays stable by design.
+
+## 10. Mental checklist
+
+If opaque types misbehave, check these first.
+
+1. Multiple return branches?
+ - If they return different concrete types, `-> some P` will not compile.
+ - Fix: erase to a common wrapper type or use `any P`.
+
+2. Need "one of many types"?
+ - Opaque types are not sum types.
+ - Fix: use `enum`, `any P`, or a type-erased wrapper.
+
+3. Need to name the concrete return type?
+ - You can't name the hidden type of `some P`.
+ - Fix: expose the concrete type or route through a generic API that gives it a name (`T`).
+
+4. Hitting `associatedtype`/`Self` errors?
+ - Remember `some P` only helps on the `return` side.
+ - Fix: introduce generics (`func f<P: Protocol>(_ p: P)`), or use type erasure.
+
+5. Confusing compiler messages around `some`?
+ - Check all return paths and intermediate values.
+ - Fix: simplify the function, introduce helper wrappers, or replace opaque types with explicit generics.
+
+
+## 11. In summary
+
+Opaque result types sit between generics and existentials.
+
+They give abstraction without erasure, performance without exposure, and demand discipline.
+
+Think of `some P` as a promise, "a single, hidden concrete type that conforms to `P` for this declaration". It's Hidden. It's Stable.
+
+When in doubt, reach for one of these tools:
+
+- Plain generics (`<T: Protocol>`) when callers need to thread the type through
+- `any Protocol` or a type-erased wrapper when you truly need heterogeneity at runtime
+- `some Protocol` when you want to choose and hide the concrete type without giving up performance.
+
+Once you internalize that model, the behavior stops feeling random and starts feeling strict.
