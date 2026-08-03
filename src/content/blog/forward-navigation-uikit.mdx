@@ -1,0 +1,154 @@
+---
+title: "UIKit swipe forward navigation: animationControllerFor disables interactivePopGestureRecognizer"
+description: Advertising a custom transition switches off the system back gesture app wide, UIScreenEdgePanGestureRecognizer never fires for trackpads, and on iOS 26 the card corners are not in layer.cornerRadius.
+pubDate: 2026-08-03
+---
+
+Pop a screen you meant to keep and there is no way back to it. The stack is gone, so you navigate to it again by hand, which on a details screen several taps deep is the rest of the journey repeated.
+
+Swipe back is built into `UINavigationController`. Swipe forward is not. Kurozora adds it app wide from a base navigation controller, and building it ran into three behaviors that are not documented.
+
+Implementing a custom transition disables the system back gesture everywhere. The obvious recognizer for an edge swipe never fires for trackpad or mouse input. And matching the system's rounded card corners on iOS 26 cannot be done by reading `layer.cornerRadius`, because the value is not there.
+
+## How the back gesture breaks
+
+The symptom is that swipe back stops working across the whole app after adding a navigation delegate, including on screens with no custom transition and for pops where the delegate returns `nil`.
+
+Narrowing it down is a matter of removing one method at a time. The delegate keeps working with `navigationController(_:didShow:animated:)` and the rest. The gesture dies as soon as `navigationController(_:animationControllerFor:from:to:)` exists on the type. Returning `nil` from it makes no difference, and neither does gating the body on a flag. Declaring the method is sufficient.
+
+The reason is that the system's own gesture delegate asks the navigation delegate whether it responds to that selector, and treats a positive answer as a custom transition being in play. It never calls the method to find out. Since `responds(to:)` is the actual question being asked, that is what to answer.
+
+```swift
+override func responds(to aSelector: Selector!) -> Bool {
+    switch aSelector {
+    case #selector(ForwardNavigationCoordinator.navigationController(_:animationControllerFor:from:to:)),
+         #selector(ForwardNavigationCoordinator.navigationController(_:interactionControllerFor:)):
+        return self.screenBeingRestored != nil
+    default:
+        return super.responds(to: aSelector)
+    }
+}
+```
+
+`screenBeingRestored` is non-nil only between the gesture starting and the transition finishing. Outside that window the delegate appears to have no transition methods and the system back gesture behaves normally.
+
+One constraint makes this work. UIKit reads `responds(to:)` when the delegate is assigned, not when it needs an answer, so flipping the underlying state has no effect on its own. Assigning the same object again is a no-op, so the property has to be cleared first.
+
+```swift
+private func readvertiseDelegate(on navigationController: UINavigationController) {
+    navigationController.delegate = nil
+    navigationController.delegate = self
+}
+```
+
+That runs on both edges: when the gesture claims a transition, and when the transition ends.
+
+## Trackpad input and the edge recognizer
+
+`UIScreenEdgePanGestureRecognizer` is the documented tool for an edge swipe, and it does not fire for trackpad or mouse input at all. It requires a touch that begins within the edge region, and indirect scroll events carry no touch origin, so there is nothing for it to qualify. On Mac Catalyst the gesture never starts.
+
+A plain `UIPanGestureRecognizer` does receive indirect input once it asks for it.
+
+```swift
+let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.handlePanGesture(_:)))
+panGestureRecognizer.allowedScrollTypesMask = .all
+panGestureRecognizer.cancelsTouchesInView = false
+panGestureRecognizer.delegate = self
+view.addGestureRecognizer(panGestureRecognizer)
+```
+
+`allowedScrollTypesMask` is the whole difference. Without it the recognizer ignores scroll wheel and trackpad pans. With `.all` a two finger swipe drives the transition.
+
+Dropping the edge recognizer also drops its arbitration against scrolling content, which has to be reimplemented. A swipe starting within a band of the trailing edge takes priority. Anywhere else it yields to horizontally scrollable content under the touch.
+
+```swift
+func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard
+        UserSettings.forwardNavigationEnabled,
+        self.canNavigateForward,
+        self.screenBeingRestored == nil,
+        let navigationController = self.navigationController,
+        navigationController.presentedViewController == nil,
+        navigationController.topViewController?.transitionCoordinator == nil
+    else { return false }
+
+    guard let view = gestureRecognizer.view else { return true }
+
+    self.didBeginAtTrailingEdge = self.beginsAtTrailingEdge(gestureRecognizer)
+
+    return self.didBeginAtTrailingEdge || !self.hasHorizontallyScrollableContent(at: gestureRecognizer.location(in: view), in: view)
+}
+```
+
+## The card corners are not in layer.cornerRadius
+
+A forward transition should look like the system's back swipe played in reverse, so the incoming screen needs the same rounded leading corners the system gives its cards.
+
+Measuring the system transition means walking `UINavigationTransitionView` during a real pop and reading the presentation layers, not the model layers. Mid-animation the model layer already holds the end state, so a pop's incoming view reports `transform = identity` throughout and looks stationary.
+
+Inside `UIViewControllerWrapperView` the cards are `_UIParallaxTransitionCardView`, with a `_UIParallaxDimmingView` between them. The measured values are the same on iPhone and on Mac Catalyst:
+
+| Property | Value |
+|---|---|
+| `shadowOpacity` | `0.04` |
+| `shadowRadius` | `12.0` |
+| `shadowOffset` | `(0, -3)`, vertical rather than horizontal |
+| `cornerCurve` | `.continuous` |
+| `cornerRadius` | `0.0` |
+| `mask` / `masksToBounds` | nil / false |
+| Parallax offset | 30% of the container width |
+| Dimming color | black at `0.102`, animated through the view's alpha |
+
+The corners are visibly rounded and `cornerRadius` reads zero, as do `mask` and `masksToBounds`. Introspecting those three is the wrong question. On iOS 26 the corners are resolved through `UIView.cornerConfiguration` with `UICornerRadius.containerConcentric`, computed at render time from the container's geometry, so no radius is ever written to the layer. `UIView.effectiveRadius(corner:)` reads the resolved value.
+
+That gives two ways to match it. On iOS 26 and later, describe the corners the same way the system does and let it resolve them:
+
+```swift
+if #available(iOS 26.0, macCatalyst 26.0, *) {
+    toView.cornerConfiguration = .uniformCorners(radius: .containerConcentric(minimum: 0.0))
+}
+```
+
+That flattens to square on Mac Catalyst by itself, since the display has square corners. Below iOS 26 there is no public equivalent, so the radius has to come from the display and be applied to the layer directly, masking only the leading corners and restoring the previous values when the transition completes.
+
+```swift
+private func displayCornerRadius(for view: UIView) -> CGFloat {
+    guard let window = view.window, let screen = window.windowScene?.screen else { return 0.0 }
+
+    if #available(iOS 26.0, macCatalyst 26.0, *) {
+        let publicRadius = window.effectiveRadius(corner: .topLeft)
+
+        if publicRadius > 0.0 {
+            return publicRadius
+        }
+    }
+
+    let radiusKey = "_displayCornerRadius"
+    guard screen.responds(to: NSSelectorFromString(radiusKey)) else { return 0.0 }
+
+    return screen.value(forKey: radiusKey) as? CGFloat ?? 0.0
+}
+```
+
+The public read is tried first and the private one is only reached on older systems, guarded by `responds(to:)` so a future change degrades to square corners rather than crashing.
+
+## Finishing the interactive transition
+
+A percent driven transition needs to be told how to animate the remainder after the gesture ends, and the property named for it is ignored. `UIPercentDrivenInteractiveTransition.completionCurve` has no effect once the animator implements `interruptibleAnimator(using:)`, because the animator owns its own timing. `timingCurve` is the property that applies, and it accepts a `UITimingCurveProvider`, so a spring fits.
+
+`completionSpeed` is separate and still required, since UIKit compresses the remaining animation into `duration × remaining`. Without it, a swipe released near the end snaps shut in about 0.07s instead of 0.22s.
+
+```swift
+interactionController.timingCurve = ForwardNavigationAnimator.completionTimingParameters
+interactionController.completionSpeed = remaining
+```
+
+The spring fitted to the system transition:
+
+```swift
+UISpringTimingParameters(mass: 1.0, stiffness: 510.8, damping: 37.97, initialVelocity: .zero)
+```
+
+That is a damping ratio of 0.84 and a natural frequency of 22.6 rad/s, reaching the target in about 0.21s with a 0.8% overshoot. The system springs from rest and ignores release velocity, so there is no need to feed the gesture's velocity in.
+
+`UIViewPropertyAnimator.scrubsLinearly` defaults to `true`, which is what lets spring timing for the finish coexist with 1:1 finger tracking during the gesture: a paused animator scrubs linearly regardless of its timing curve.
