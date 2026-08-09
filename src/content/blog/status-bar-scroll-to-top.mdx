@@ -1,0 +1,107 @@
+---
+title: "iOS status bar scroll to top: scrollViewShouldScrollToTop is not called a second time"
+description: UIWindow keeps a registry of scroll views and decides whether scrolling is necessary before consulting any delegate. Resting one device pixel below the top keeps the flow available for the next tap.
+pubDate: 2026-08-09
+---
+
+Tapping the status bar scrolls a list to the top. You do it deliberately to check something at the top of a long feed, and you do it by accident reaching for the notch. Either way, getting back to where you were means scrolling the whole way down again.
+
+Kurozora restores the previous position when you tap a second time. UIKit offers no hook for it: `scrollViewShouldScrollToTop(_:)` runs for the first tap and never for the second.
+
+The fix is to stop returning `true` from that delegate method. Run the scroll yourself and finish one device pixel short of the top, which keeps the scroll view eligible for the next tap.
+
+## Tracing the tap
+
+The status bar belongs to its own window, one per scene, so the tap never arrives in an app window as a `UITouch`. A gesture recognizer added to your own window sees nothing, and there is no notification to observe. Working out what to override means reading the path in the runtime.
+
+Dumping the selectors on `UIStatusBarManager` and breaking on them gives the chain:
+
+```
+-[UIStatusBarManager handleTapAction:]
+  -[UIStatusBarManager _handleScrollToTopAtXPosition:]
+  -[UIWindow _scrollToTopViewsUnderScreenPointIfNecessary:resultHandler:]
+  -[UIScrollView _scrollToTopFromTouchAtScreenLocation:resultHandler:]
+  -[UIScrollView _scrollToTopIfPossible:]
+```
+
+Two things in that chain explain the missing second call.
+
+Scroll views are not discovered by walking the view hierarchy when the tap lands. They register themselves through `_registerAsScrollToTopViewIfPossible`, which calls `UIWindow._registerScrollToTopView:`, and the window keeps the list. On a tap the window filters its registered views by the tap's x position.
+
+`_scrollToTopViewsUnderScreenPointIfNecessary:` then decides whether scrolling is necessary across all the candidates it found, and it does that before dispatching to any of them. The delegate is consulted downstream of that decision. A scroll view already at the top makes scrolling unnecessary, the chain stops, and `scrollViewShouldScrollToTop(_:)` is never reached.
+
+The second tap is not routed elsewhere or swallowed. UIKit decided there was nothing to do.
+
+## The restorer
+
+Eligibility is decided by whether a candidate can scroll, so the scroll view has to stay able to scroll. Landing one device pixel short of the top satisfies that and is not visible.
+
+```swift
+final class StatusBarScrollRestorer: NSObject {
+    private var contentOffsetBeforeStatusBarJump: CGPoint?
+
+    func install(restoring scrollView: UIScrollView) {
+        scrollView.panGestureRecognizer.addTarget(self, action: #selector(self.handlePanGesture(_:)))
+    }
+
+    func shouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+        if let contentOffsetBeforeStatusBarJump = self.contentOffsetBeforeStatusBarJump {
+            self.contentOffsetBeforeStatusBarJump = nil
+            scrollView.setContentOffset(self.clamped(contentOffsetBeforeStatusBarJump, in: scrollView), animated: true)
+            return false
+        }
+
+        let minimumRestorableDistance: CGFloat = 20
+        let topContentOffset = -scrollView.adjustedContentInset.top
+        guard scrollView.contentOffset.y > topContentOffset + minimumRestorableDistance else { return true }
+
+        self.contentOffsetBeforeStatusBarJump = scrollView.contentOffset
+
+        let restingDistance = 1 / max(scrollView.traitCollection.displayScale, 1)
+        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: topContentOffset + restingDistance), animated: true)
+        return false
+    }
+
+    @objc private func handlePanGesture(_ panGestureRecognizer: UIPanGestureRecognizer) {
+        if panGestureRecognizer.state == .began {
+            self.contentOffsetBeforeStatusBarJump = nil
+        }
+    }
+}
+```
+
+The stored offset carries the state. Its presence means a jump happened and the next tap is a restore. Its absence means the next tap is a jump.
+
+Returning `true` when the list is already near the top is deliberate. There is no position worth restoring, so UIKit can have the scroll and the flow does not need holding open.
+
+The short landing has to happen within the same animation. Scrolling to the exact top and correcting afterwards in `scrollViewDidScrollToTop(_:)` produces a visible settle, even at one pixel.
+
+## Wiring it to a base controller
+
+One restorer per screen, installed once the scroll view exists, with the delegate method forwarding to it. In a base class this covers every screen that inherits from it.
+
+```swift
+private lazy var statusBarScrollRestorer: StatusBarScrollRestorer = StatusBarScrollRestorer()
+
+override func viewDidLoad() {
+    super.viewDidLoad()
+
+    #if !targetEnvironment(macCatalyst)
+    self.statusBarScrollRestorer.install(restoring: self.collectionView)
+    #endif
+}
+
+override func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+    return self.statusBarScrollRestorer.shouldScrollToTop(scrollView)
+}
+```
+
+The Catalyst guard is there because the Mac has no status bar to tap.
+
+## Two things that are not reliable
+
+The scroll view's own offset is not a usable test for being at the top. A large title expanding during the jump leaves the final offset a couple of points short of the value you requested, so comparing `contentOffset.y` against `-adjustedContentInset.top` misfires. The stored `CGPoint?` is the state, and nothing is inferred from geometry.
+
+The stored offset also has to be discarded when the user scrolls manually, and the place to do that is the scroll view's pan gesture recognizer rather than `scrollViewWillBeginDragging(_:)`. Subclasses override the delegate method and are not obliged to call super, so any screen that does would silently restore a stale position. A recognizer target has no such gap.
+
+Clamping on the way back covers the last case. Content can shrink between the two taps, and restoring an offset past the new bottom bounces.
