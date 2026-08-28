@@ -7,45 +7,66 @@ interface Props {
     post: CollectionEntry<"blog">;
 }
 const { post } = Astro.props;
+
+const heroImage = post.data.heroImage;
+
+// Mirror transforms for the tiles surrounding the hero image.
+const tiles = [
+    "-scale-x-100", "",             "-scale-x-100",
+    "-scale-100",   "-scale-y-100", "-scale-100",
+];
 ---
 
 <li class="relative overflow-hidden rounded-lg">
     {
-        post.data.heroImage && (
+        heroImage && (
+            <div
+                    class="absolute top-0 -left-full grid w-[300%] grid-cols-3 blur-lg saturate-200 brightness-[0.6]"
+                    aria-hidden="true"
+            >
+                {tiles.map((mirror) => (
+                    <Image
+                            class:list={["block w-full", mirror]}
+                            width={720}
+                            height={360}
+                            src={heroImage}
+                            alt=""
+                    />
+                ))}
+            </div>
+        )
+    }
+
+    {
+        heroImage && (
             <Image
+                    class="relative block w-full"
                     width={720}
                     height={360}
-                    src={post.data.heroImage}
+                    src={heroImage}
                     alt={post.data.title}
             />
         )
     }
 
-    <div class="absolute bottom-0 left-0 right-0 p-2 backdrop-blur-md bg-black/40">
-        <small class="date text-xs">
-            <FormattedDate date={post.data.pubDate} />
-        </small>
+    <div class:list={[
+        "relative px-4 pt-3 pb-4",
+        !heroImage && "bg-white/5",
+    ]}>
+        <div class="absolute inset-0 bg-linear-to-b from-black/15 to-black/45"></div>
 
-        <h4 class="text-md font-semibold">{post.data.title}</h4>
+        <div class="relative">
+            <small class="text-xs opacity-70">
+                <FormattedDate date={post.data.pubDate} />
+            </small>
 
-        <p class="text-sm line-clamp-2">
-            {post.data.description}
-        </p>
+            <h4 class="text-md font-semibold">{post.data.title}</h4>
+
+            <p class="text-sm line-clamp-2">
+                {post.data.description}
+            </p>
+        </div>
     </div>
 
-    <a class="absolute top-0 w-full h-full" href={`/blog/${post.id}/`}></a>
+    <a class="absolute inset-0" href={`/blog/${post.id}/`}></a>
 </li>
-
-<style>
-    .date {
-        color: var(--text);
-        opacity: 50%;
-    }
-    .title {
-        color: var(--text);
-    }
-    .description {
-        color: var(--text);
-        opacity: 50%;
-    }
-</style>

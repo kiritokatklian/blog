@@ -19,11 +19,11 @@ const posts = (await getCollection('blog'))
     <body class="dark">
         <Header />
 
-        <main class="mx-auto max-w-screen-sm px-5">
-            <h1 class="mt-4 mb-4">Latest</h1>
+        <main>
+            <h1 class="text-4xl font-bold leading-tight tracking-tight mt-4 mb-6">Latest</h1>
 
             <section>
-                <ul class="space-y-8">
+                <ul class="grid gap-8">
                     {
                         posts.map((post) => (
                                 <BlogLockup post={post} />
@@ -32,8 +32,8 @@ const posts = (await getCollection('blog'))
                 </ul>
             </section>
 
-            <div class="mt-12">
-                <a href="/blog">View All</a>
+            <div class="mt-12 flex justify-center">
+                <a class="rounded-full border border-white/15 bg-white/5 px-6 py-2.5 text-sm font-medium no-underline" href="/blog">View All</a>
             </div>
         </main>
 

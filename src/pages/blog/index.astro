@@ -25,19 +25,19 @@ const postsByYear = posts.reduce((groups, post) => {
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
-	</head>
-	<body class="dark">
-		<Header />
-		<main class="mx-auto max-w-screen-sm px-5">
-            <h1>Blog</h1>
+    <head>
+        <BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+    </head>
+    <body class="dark">
+        <Header />
+        <main class="grid gap-14">
+            <h1 class="text-4xl font-bold leading-tight tracking-tight">Blog</h1>
 
             {
                 Object.entries(postsByYear).map(([year, yearPosts]) => (
-                    <section>
-                        <h2>{year}</h2>
-                        <ul>
+                    <section class="grid gap-4">
+                        <h2 class="text-2xl font-semibold leading-tight">{year}</h2>
+                        <ul class="grid gap-8">
                             {yearPosts.map((post) => (
                                 <BlogLockup post={post} />
                             ))}
@@ -45,7 +45,7 @@ const postsByYear = posts.reduce((groups, post) => {
                     </section>
                 ))
             }
-		</main>
-		<Footer />
-	</body>
+        </main>
+        <Footer />
+    </body>
 </html>
