@@ -1,0 +1,115 @@
+---
+title: "Mac Catalyst: a WKWebView video goes black when the window is occluded"
+description: WebKit marks the page background when the Catalyst scene backgrounds, and none of the throttling preferences prevent it. Posting a scene-scoped foreground notification keeps the page drawing.
+pubDate: 2026-08-28
+---
+
+Kurozora plays trailers in a `WKWebView`. Switching desktops mid-trailer, or swiping to peek at the window without committing to it, should leave the video playing, because a player that blanks the moment you look away reads as broken.
+
+On Mac it turns into a black rectangle instead, and the frame is still stale when the window comes back, until something forces a repaint.
+
+The fix is to post `UIScene.willEnterForegroundNotification` scoped to the web view's own scene whenever that scene backgrounds. The rest of this explains why that is the lever, and why the app-level equivalent crashes the app a few minutes later.
+
+## Reading WebKit's background flag
+
+`WKWebView` keeps a private `_isBackground` flag, and it is readable at runtime. Logging it separates two possibilities that look identical on screen: WebKit throttling a page it considers hidden, and WebKit treating the page as backgrounded.
+
+```swift
+private var isPageBackground: Bool {
+    let selector = NSSelectorFromString("_isBackground")
+    guard self.webView.responds(to: selector) else { return false }
+
+    typealias StateGetter = @convention(c) (NSObject, Selector) -> Bool
+    return unsafeBitCast(self.webView.method(for: selector), to: StateGetter.self)(self.webView, selector)
+}
+```
+
+Logged next to `windowScene?.activationState` and the window's `occlusionState` on every change, the sequence is unambiguous. The window becomes occluded, the scene enters the background a moment later, and `_isBackground` turns true immediately after the scene does. The page is not being throttled for being hidden. It is being backgrounded because its scene was.
+
+That also explains why the throttling preferences change nothing here. They govern what WebKit does with a page it considers hidden, and this page is not classified as hidden, it is classified as background.
+
+## The scene-scoped notification
+
+`_isBackground` responds to one thing: a `NotificationCenter` broadcast announcing a return to the foreground. There are two notification names that qualify, and they differ in what else listens to them.
+
+`UIScene.willEnterForegroundNotification` posted with a specific scene as its object reaches WebKit's state tracker when that tracker is registered against the scene, which is the case for a web view hosted in a normal scene-backed window. Nothing in UIKit's application-level bookkeeping observes that name, so the post has no other consequences.
+
+```swift
+NotificationCenter.default.post(name: UIScene.willEnterForegroundNotification, object: sceneObject)
+```
+
+Two conditions matter. The post must happen one main queue hop after the real `UIScene.didEnterBackgroundNotification`, because a post made while the real notification is still being delivered is overtaken by the remaining observers and the page backgrounds again. And it is worth re-reading `_isBackground` afterwards rather than assuming, since the tracker's registration is not guaranteed.
+
+## The app-level notification asserts on the next real transition
+
+When the scene-scoped post leaves `_isBackground` true, the application-level name works instead. `UIApplication.willEnterForegroundNotification` reaches the tracker in every configuration tested.
+
+It also breaks the app, in a way that is easy to misattribute. `UINSUIKitBackgroundingController` observes that name through `_uiAppWillForeground:` and maintains state across transitions. A synthetic post leaves that state inconsistent with the real lifecycle, and the controller raises an assertion the next time a genuine foreground transition arrives. The app terminates on an unrelated stack, minutes after the post that caused it, with the video having played correctly the whole time.
+
+Restricting that observer to real transitions makes the fallback usable. Replace the implementation once, and gate it on a flag that is only set around the synthetic post.
+
+```swift
+private static let backgroundingBookkeeperLooksAway: Bool = {
+    let selector = NSSelectorFromString("_uiAppWillForeground:")
+    guard
+        let controllerClass = NSClassFromString("UINSUIKitBackgroundingController"),
+        let method = class_getInstanceMethod(controllerClass, selector)
+    else { return false }
+
+    typealias Handler = @convention(c) (NSObject, Selector, NSNotification) -> Void
+    let original = unsafeBitCast(method_getImplementation(method), to: Handler.self)
+
+    let replacement: @convention(block) (NSObject, NSNotification) -> Void = { receiver, notification in
+        guard !TrailerWebPlayer.isPostingSyntheticForeground else { return }
+        original(receiver, selector, notification)
+    }
+
+    method_setImplementation(method, imp_implementationWithBlock(replacement))
+    return true
+}()
+```
+
+`method_setImplementation` on the class, not `object_setClass` on the instance. Controllers like this one carry live KVO observers, and KVO implements observation by isa-swizzling the instance into a dynamic subclass, so replacing that instance's class corrupts the chain and crashes on the next observed change.
+
+With both tiers defined, the sequence reads in order of increasing risk.
+
+```swift
+private func walkPageToForeground(sceneObject: Any?) {
+    guard self.isPageBackground else { return }
+
+    if let sceneObject = sceneObject {
+        NotificationCenter.default.post(name: UIScene.willEnterForegroundNotification, object: sceneObject)
+
+        if !self.isPageBackground {
+            return
+        }
+    }
+
+    guard Self.backgroundingBookkeeperLooksAway else { return }
+
+    Self.isPostingSyntheticForeground = true
+    NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: UIApplication.shared)
+    Self.isPostingSyntheticForeground = false
+}
+```
+
+## Forcing a repaint when the window returns
+
+A page that kept drawing can still present the frame it held when the window was occluded: the compositor has had no new frame to show. A paused video has to be given one explicitly.
+
+```swift
+let script = "(function(){ var v = document.querySelector('video'); if (v && v.paused && v.currentTime > 0) { v.currentTime = v.currentTime; } })();"
+self.webView.evaluateJavaScript(script, in: embedFrameInfo, in: .page, completionHandler: nil)
+```
+
+Assigning `currentTime` to itself is a zero-distance seek, which is enough to present the frame again. The trigger is `NSWindowDidChangeOcclusionStateNotification` with bit `1 << 1` of `occlusionState` set, meaning visible. Running it once is unreliable: a repaint requested while the desktop switch is still settling gets dropped, so it needs repeating a second or so later.
+
+## Approaches that do not work
+
+Four things look like the answer.
+
+`WKPreferences.inactiveSchedulingPolicy = .none` and the private `_setAlwaysRunsAtForegroundPriority:` on the configuration both address scheduling and process priority, neither of which is what stops the drawing.
+
+The internal suspension features reachable through `WKPreferences._features` and `_setEnabled:forFeature:` are the same story. Disabling `PageVisibilityBasedProcessSuppressionEnabled`, `BackgroundWebContentRunningBoardThrottlingEnabled`, `HiddenPageDOMTimerThrottlingEnabled`, `HiddenPageDOMTimerThrottlingAutoIncreases`, `HiddenPageCSSAnimationSuspensionEnabled` and `ShouldDropNearSuspendedAssertionAfterDelay` tunes the hidden-page policy, and the page is background rather than hidden.
+
+`WKContentView._applicationWillEnterForeground:` reads as the direct way to put the page back. Calling it leaves `_isBackground` true, because it is a legacy entry point that no longer feeds the state tracker. This is the one worth knowing about, because it fails silently and looks correct.
