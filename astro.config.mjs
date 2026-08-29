@@ -11,5 +11,7 @@ export default defineConfig({
   integrations: [mdx(), sitemap()],
   vite: {
     plugins: [tailwindcss()],
+    // Lightning CSS drops the unprefixed backdrop-filter: vitejs/vite#22649.
+    build: { cssMinify: 'esbuild' },
   },
 });
