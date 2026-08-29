@@ -2,6 +2,7 @@
 title: "Mac Catalyst: UISlider throws on minimumTrackTintColor in the Mac idiom"
 description: The Mac idiom rejects every tint property, and preferredBehavioralStyle trades the native knob for tinting. The hosted NSSlider behind the control accepts the color through its public trackFillColor.
 pubDate: 2026-08-08
+heroImage: ../../assets/uislider-hero.png
 ---
 
 Kurozora's music player fills its volume slider track in white rather than the system accent. On iOS that is one property. In the Catalyst Mac idiom `minimumTrackTintColor`, `maximumTrackTintColor`, `thumbTintColor` and the track and thumb image setters all raise an exception mentioning `UIBehavioralStyle`. The control is not ignoring the value, it refuses the call.
@@ -55,6 +56,8 @@ private func applyTrackFill() {
     self.didApplyTrackFill = true
 }
 ```
+
+![The volume slider with a white filled track and the Mac's oval knob](../../assets/uislider-track-fill.png)
 
 The knob and the press morph are unaffected, because the control is still the system one.
 
