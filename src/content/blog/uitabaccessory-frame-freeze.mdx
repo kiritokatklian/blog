@@ -2,7 +2,6 @@
 title: "iOS 26 UITabAccessory keeps a stale frame after an iPad window resize"
 description: The tab bar bottom accessory owns its content view's frame through autoresizing, and reuses the compact size after the window returns to the regular layout. Setting the private container's frame from the controller restores it.
 pubDate: 2026-06-23
-heroImage: ../../assets/tabaccessory-hero.png
 ---
 
 Kurozora puts its now playing bar in the iOS 26 tab bar accessory, through `UITabBarController.bottomAccessory`. On iPad the bar has to keep a fixed height and stay within the readable content width, so it lines up with the content beside the sidebar instead of stretching the full window.

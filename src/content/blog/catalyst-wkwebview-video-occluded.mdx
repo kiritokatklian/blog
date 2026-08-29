@@ -2,7 +2,6 @@
 title: "Mac Catalyst: a WKWebView video goes black when the window is occluded"
 description: WebKit marks the page background when the Catalyst scene backgrounds, and none of the throttling preferences prevent it. Posting a scene-scoped foreground notification keeps the page drawing.
 pubDate: 2026-08-28
-heroImage: ../../assets/wkwebview-hero.png
 ---
 
 Kurozora plays trailers in a `WKWebView`. Switching desktops mid-trailer, or swiping to peek at the window without committing to it, should leave the video playing, because a player that blanks the moment you look away reads as broken.

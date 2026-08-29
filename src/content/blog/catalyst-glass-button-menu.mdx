@@ -2,7 +2,6 @@
 title: "Mac Catalyst: assigning UIButton.menu makes a .glass() button invisible on macOS 26"
 description: A menu on a glass configured button suppresses UIButtonMacVisualElement, and setImage(_:for:) never reaches a configuration based button. Two independent causes of a button that renders nothing.
 pubDate: 2026-05-02
-heroImage: ../../assets/glass-button-hero.png
 ---
 
 Kurozora's media viewer has a row of circular Liquid Glass buttons: share, save, and a more button that opens a menu. On iPhone and iPad all three draw. On Mac the more button draws nothing, no glass platter and no glyph, while still taking taps and still opening its menu.
