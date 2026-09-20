@@ -27,8 +27,7 @@ const tiles = [
                 {tiles.map((mirror) => (
                     <Image
                             class:list={["block w-full", mirror]}
-                            width={720}
-                            height={360}
+                            quality={90}
                             src={heroImage}
                             alt=""
                     />
@@ -41,8 +40,7 @@ const tiles = [
         heroImage && (
             <Image
                     class="relative block w-full"
-                    width={720}
-                    height={360}
+                    quality={90}
                     src={heroImage}
                     alt={post.data.title}
             />

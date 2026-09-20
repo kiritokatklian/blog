@@ -1,5 +1,5 @@
 ---
-import { Image } from 'astro:assets';
+import { getImage, Image } from 'astro:assets';
 import type { CollectionEntry } from 'astro:content';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
@@ -10,11 +10,14 @@ import '../styles/global.css'
 type Props = CollectionEntry<'blog'>['data'];
 
 const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
+const socialImage = heroImage
+    ? await getImage({ src: heroImage, width: 1920, format: 'png' })
+    : undefined;
 ---
 
 <html lang="en">
     <head>
-        <BaseHead title={title} description={description} />
+        <BaseHead title={title} description={description} image={socialImage?.src} />
         <style>
             .hero-image {
                 width: 100%;
@@ -41,7 +44,7 @@ const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
         <main>
             <article>
                 <div class="hero-image">
-                    {heroImage && <Image width={1020} height={510} src={heroImage} alt="" />}
+                    {heroImage && <Image quality={90} src={heroImage} alt="" />}
                 </div>
                 <div>
                     <div class="title">
